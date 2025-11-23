@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>TT Toss Rule Checker</title>
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      overflow: hidden;
+      background-color: #222;
+      /* Dark background for start screen */
+    }
+
+    /* --- START SCREEN (First Screen) --- */
+    #start-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 999;
+      /* On top of everything initially */
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      text-align: center;
+      pointer-events: none;
+      /* Allow clicks to pass through to AR button if needed */
+      background: rgba(0, 0, 0, 0.5);
+      /* Semi-transparent to see camera feed if active */
+    }
+
+    #start-screen h1 {
+      font-size: 32px;
+      margin-bottom: 20px;
+      text-shadow: 2px 2px 4px #000;
+    }
+
+    #start-screen p {
+      font-size: 18px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 20px;
+      border-radius: 20px;
+    }
+
+    #links-container {
+      margin-top: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: auto;
+      /* Enable clicking */
+    }
+
+    #links-container a {
+      color: #4CC3D9;
+      text-decoration: none;
+      font-size: 16px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 8px 16px;
+      border-radius: 15px;
+      transition: background 0.3s;
+    }
+
+    #links-container a:hover {
+      background: rgba(0, 0, 0, 0.8);
+      text-decoration: underline;
+    }
+
+    /* --- AR UI OVERLAY (Hidden initially) --- */
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: auto;
+      display: none;
+      /* Hidden until AR starts */
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    #tap-area {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    #status-box {
+      margin-bottom: 40px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 15px;
+      border-radius: 10px;
+      text-align: center;
+      font-size: 16px;
+      max-width: 90%;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .metric {
+      font-size: 20px;
+      font-weight: bold;
+      color: #4CC3D9;
+      margin: 5px 0;
+    }
+
+    .warning {
+      color: #ff4b4b;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+
+    #no-ar-message {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(50, 50, 50, 0.9);
+      color: #bbb;
+      padding: 12px 20px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 1000;
+      display: none;
+      border: 1px solid #555;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Initial Start Screen -->
+  <div id="start-screen">
+    <h1>TT Toss Rule Checker</h1>
+    <p>Please press the AR button<br>on the bottom right &#8600;</p>
+
+    <p style="font-size: 16px; margin-top: 10px;">This WebAR app works only on the latest Android devices.</p>
+    <p style="font-size: 16px; margin-top: 5px;">Supported? <span id="ar-support"
+        style="font-weight: bold;">Checking...</span></p>
+
+    <div id="links-container">
+      <a href="https://github.com/KenRoda/tt-toss-rule-checker" target="_blank">GitHub Repository</a>
+      <a href="https://github.com/KenRoda/tt-toss-rule-checker/tree/main/ios" target="_blank">iOS Project</a>
+      <a href="https://github.com/KenRoda/tt-toss-rule-checker/tree/main/android" target="_blank">Android
+        Project</a>
+    </div>
+  </div>
+
+  <!-- Message when AR is not supported -->
+  <div id="no-ar-message">AR button is not available on this device</div>
+
+  <!-- AR Operation Overlay -->
+  <div id="overlay">
+    <div id="tap-area"></div>
+    <div id="status-box">
+      <div id="instruction">Please start AR</div>
+      <div id="result"></div>
+    </div>
+  </div>
+
+  <!-- A-Frame Scene -->
+  <a-scene webxr="requiredFeatures: local-floor; optionalFeatures: dom-overlay; overlayElement: #overlay">
+
+    <a-entity id="camera-rig">
+      <a-camera position="0 1.6 0"></a-camera>
+    </a-entity>
+
+    <a-entity id="drawing-container"></a-entity>
+
+  </a-scene>
+
+  <script>
+    let step = 0; // 0:Wait, 1:Started, 2:Done
+    let startPos = null;
+    let peakPos = null;
+
+    const scene = document.querySelector('a-scene');
+    const camera = document.querySelector('a-camera');
+
+    const startScreen = document.getElementById('start-screen');
+    const overlay = document.getElementById('overlay');
+    const instructionUI = document.getElementById('instruction');
+    const resultUI = document.getElementById('result');
+    const container = document.getElementById('drawing-container');
+    const tapArea = document.getElementById('tap-area');
+
+    // Event Listener for Entering AR
+    scene.addEventListener('enter-vr', () => {
+      // Hide Title Screen, Show AR Overlay
+      startScreen.style.display = 'none';
+      overlay.style.display = 'flex';
+      resetApp();
+    });
+
+    // Event Listener for Exiting AR (Optional: show title again)
+    scene.addEventListener('exit-vr', () => {
+      startScreen.style.display = 'flex';
+      overlay.style.display = 'none';
+    });
+
+    function updateUI() {
+      if (step === 0) {
+        instructionUI.innerHTML = "<b>[Step 1]</b><br>Hold phone at toss start position<br>and tap screen.";
+        resultUI.innerHTML = "";
+      } else if (step === 1) {
+        instructionUI.innerHTML = "<b>[Step 2]</b><br>Move to toss peak (highest point)<br>and tap again.";
+      } else if (step === 2) {
+        instructionUI.innerHTML = "Done. Tap to reset.";
+      }
+    }
+
+    // Tap Event Listener
+    tapArea.addEventListener('click', (e) => {
+      const currentPos = camera.object3D.position.clone();
+
+      if (step === 0) {
+        startPos = currentPos;
+        addSphere(startPos, '#FFFFFF');
+        step = 1;
+        updateUI();
+
+      } else if (step === 1) {
+        peakPos = currentPos;
+        addSphere(peakPos, '#FFFFFF');
+
+        const metrics = calculateMetrics(startPos, peakPos);
+        drawParabola(startPos, peakPos);
+        showResult(metrics);
+
+        step = 2;
+        updateUI();
+
+      } else if (step === 2) {
+        resetApp();
+      }
+    });
+
+    function addSphere(position, color) {
+      const sphere = document.createElement('a-sphere');
+      sphere.setAttribute('position', position);
+      sphere.setAttribute('radius', '0.02');
+      sphere.setAttribute('color', color);
+      container.appendChild(sphere);
+    }
+
+    function calculateMetrics(start, end) {
+      const heightM = Math.abs(end.y - start.y);
+
+      const dx = end.x - start.x;
+      const dz = end.z - start.z;
+      const horizontalDistM = Math.sqrt(dx * dx + dz * dz);
+
+      let angleDeg = 0;
+      if (heightM > 0.001) {
+        const angleRad = Math.atan(horizontalDistM / heightM);
+        angleDeg = angleRad * (180 / Math.PI);
+      } else {
+        angleDeg = 90;
+      }
+
+      return {
+        heightCm: (heightM * 100).toFixed(1),
+        angleDeg: angleDeg.toFixed(1)
+      };
+    }
+
+    function showResult(metrics) {
+      const h = metrics.heightCm;
+      const a = metrics.angleDeg;
+
+      let message = `<div class="metric">Height: ${h} cm</div>`;
+      message += `<div class="metric">Angle: ${a}°</div>`;
+
+      if (h < 16) {
+        message += `<div class="warning">⚠️ Too low (Req: >16cm)</div>`;
+      }
+      if (a > 30) {
+        message += `<div class="warning">⚠️ Not vertical enough (Must be within 30° from vertical)</div>`;
+      }
+
+      resultUI.innerHTML = message;
+    }
+
+    function drawParabola(start, end) {
+      const line = document.createElement('a-entity');
+      line.setAttribute('line', {
+        start: `${start.x} ${start.y} ${start.z}`,
+        end: `${end.x} ${end.y} ${end.z}`,
+        color: 'white', // Changed to white
+        width: 5        // Changed to 5
+      });
+      container.appendChild(line);
+    }
+
+    function resetApp() {
+      startPos = null;
+      peakPos = null;
+      step = 0;
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      updateUI();
+    }
+
+    // Init
+    updateUI();
+
+    // Check WebXR AR support
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        const statusElem = document.getElementById('ar-support');
+        if (statusElem) {
+          if (supported) {
+            statusElem.textContent = 'Yes';
+            statusElem.style.color = '#00FF00';
+          } else {
+            statusElem.textContent = 'No';
+            statusElem.style.color = '#FF4B4B';
+            document.getElementById('no-ar-message').style.display = 'block';
+          }
+        }
+      });
+    } else {
+      const statusElem = document.getElementById('ar-support');
+      if (statusElem) {
+        statusElem.textContent = 'No';
+        statusElem.style.color = '#FF4B4B';
+        document.getElementById('no-ar-message').style.display = 'block';
+      }
+    }
+  </script>
+</body>
+
+</html>
