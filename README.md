@@ -10,7 +10,7 @@ According to ITTF regulations, the ball must be tossed nearly vertically (within
 
 🚧 Project Status
 
-Web (WebAR): ✅ Active
+Web (WebAR): ✅ [Active - Try it now!](https://kenroda.github.io/tt-toss-rule-checker/)
 
 iOS App: 🚧 Under Development
 
